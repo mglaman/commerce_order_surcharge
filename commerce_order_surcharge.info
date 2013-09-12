@@ -1,0 +1,7 @@
+name = Commerce Order Surcharge
+description = Adds a $5.00 handling fee to all orders.
+package = Commerce (contrib)
+dependencies[] = commerce_line_item
+core = 7.x
+
+configure = admin/commerce/config/order/surcharge

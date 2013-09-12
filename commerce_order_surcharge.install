@@ -1,0 +1,29 @@
+<?php
+/**
+ * @file commerce_order_surcharge.install
+ */
+
+/**
+ * Implements hook_enable().
+ *
+ * Here we count on Commerce Line Items module to configure our type based on
+ * the information we provide in
+ * line_item_example_commerce_line_item_type_info().
+ */
+function commerce_order_surcharge_enable() {
+  // This function configures all existing line item types, including ours.
+  commerce_line_item_configure_line_item_types();
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function commerce_order_surcharge_uninstall() {
+  $variables = array(
+    'commerce_order_surcharge_display_title',
+    'commerce_order_surcharge_amount',
+  );
+  foreach ($variables as $variable) {
+    variable_del($variable);
+  }
+}

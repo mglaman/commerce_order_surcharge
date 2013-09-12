@@ -1,5 +1,10 @@
 <?php
 
+/**
+ * @file
+ * Handles main functionality for Commerce Order Surcharge module.
+ */
+
 /*
  * Implements hook_menu().
  */
@@ -20,7 +25,6 @@ function commerce_order_surcharge_menu() {
  * Implements hook_commerce_line_item_type_info().
  *
  * @see hook_commerce_line_item_type_info().
- * @see http://www.drupalcommerce.org/specification/info-hooks/checkout
  *
  */
 function commerce_order_surcharge_commerce_line_item_type_info() {
@@ -54,7 +58,7 @@ function commerce_order_surcharge_line_item_configuration($line_item_type) {
  * Returns a title for this line item.
  */
 function commerce_order_surcharge_line_item_title($line_item) {
-  return(t('Handling Fee'));
+  return variable_get('commerce_order_surcharge_display_title', t('Surcharge'));
 }
 
 /**
@@ -87,7 +91,7 @@ function commerce_order_surcharge_line_item_add_form_submit(&$line_item, $elemen
   // Ensure a quantity of 1.
   $line_item->quantity = 1;
 
-  $line_item->line_item_label = variable_get('commerce_order_surcharge_display_title', t('Handling Fee'));
+  $line_item->line_item_label = variable_get('commerce_order_surcharge_display_title', t('Surcharge'));
 
   // Wrap the line item and product to easily set field information.
   $line_item_wrapper = entity_metadata_wrapper('commerce_line_item', $line_item);
@@ -117,6 +121,7 @@ function commerce_order_surcharge_line_item_add_form_submit(&$line_item, $elemen
 
 
 /**
+ * Adds surcharge line item to order
  *
  * @param $order_id
  *   The ID of the order the line item belongs to (if available).
@@ -125,42 +130,77 @@ function commerce_order_surcharge_line_item_add_form_submit(&$line_item, $elemen
  *   The fully loaded line item..
  */
 function commerce_order_surcharge_line_item_new($order_id = 0) {
-  $type = 'commerce_order_surcharge';
-
   // Create the new line item.
   $line_item = entity_create('commerce_line_item', array(
-    'type' => $type,
+    'type' => 'commerce_order_surcharge',
     'order_id' => $order_id,
     'quantity' => 1,
+    'line_item_label ' => variable_get('commerce_order_surcharge_display_title', t('Handling Fee'))
   ));
+  $surcharge_line_item_wrapper = entity_metadata_wrapper('commerce_line_item', $line_item);
 
-  // Set default to 0
-  $amount = variable_get('commerce_order_surcharge_amount', 0);
-  $currency_code = variable_get('commerce_order_surcharge_currency', 'USD');
+  // Initialize the line item unit price.
+  $surcharge_line_item_wrapper->commerce_unit_price->amount = 0;
+  $surcharge_line_item_wrapper->commerce_unit_price->currency_code = commerce_default_currency();
 
-  $line_item->commerce_unit_price = array('und' => array(
-    '0' => array('amount' => $amount, 'currency_code' => $currency_code)
-  ));
+  // Reset the data array of the line item total field to only include a
+  // base price component, set the currency code from the order.
+  $base_price = array(
+    'amount' => $amount,
+    'currency_code' => $currency_code,
+    'data' => array(),
+  );
+  $surcharge_line_item_wrapper->commerce_unit_price->data = commerce_price_component_add($base_price, 'base_price', $base_price, TRUE);
 
-  $line_item_wrapper = entity_metadata_wrapper('commerce_line_item', $line_item);
+  commerce_order_surcharge_add_price_component($surcharge_line_item_wrapper);
 
-  if (!is_null($line_item_wrapper->commerce_unit_price->value())) {
-    // Add the base price to the components array.
-    if (!commerce_price_component_load($line_item_wrapper->commerce_unit_price->value(), 'base_price')) {
-      $line_item_wrapper->commerce_unit_price->data = commerce_price_component_add(
-        $line_item_wrapper->commerce_unit_price->value(),
-        'base_price',
-        $line_item_wrapper->commerce_unit_price->value(),
-        TRUE
-      );
-    }
-  }
+  //Save line item entity.
+  $surcharge_line_item_wrapper->save();
+
   // Return the line item.
   return $line_item;
 }
 
 /**
- * Adds a shipping line item to an order.
+ * Adds a surcharge price component to the provided line item.
+ *
+ * @param $line_item_wrapper
+ *   The wrapped line item entity.
+ */
+function commerce_order_surcharge_add_price_component($line_item_wrapper) {
+  $unit_price = commerce_price_wrapper_value($line_item_wrapper, 'commerce_unit_price', TRUE);
+  $current_amount = $unit_price['amount'];
+  // Currencies don't match, abort.
+  if (commerce_default_currency() != $unit_price['currency_code']) {
+    return;
+  }
+
+  //Surcharge amount
+  $surcharge_amount = variable_get('commerce_order_surcharge_amount', 0);
+  $updated_amount = commerce_round(COMMERCE_ROUND_HALF_UP, $current_amount + $surcharge_amount);
+
+  //Surcharge title
+  $surcharge_title = variable_get('commerce_order_surcharge_display_title', t('Handling Fee'));
+  $difference = array(
+    'amount' => $surcharge_amount,
+    'currency_code' => commerce_default_currency(),
+    'data' => array(),
+  );
+
+  // Set the amount of the unit price and add the difference as a component.
+  $line_item_wrapper->commerce_unit_price->amount = $updated_amount;
+
+  $line_item_wrapper->commerce_unit_price->data = commerce_price_component_add(
+    $line_item_wrapper->commerce_unit_price->value(),
+    'commerce_order_surcharge',
+    $difference,
+    TRUE
+  );
+
+}
+
+/**
+ * Adds surcharge  line item to an order.
  *
  * @param $line_item
  *   An unsaved shipping line item that should be added to the order.
@@ -193,34 +233,16 @@ function commerce_order_surcharge_add_surcharge_line_item($line_item, $order, $s
 }
 
 /**
- * Deletes all shipping line items on an order.
- *
- * @param $order
- *  The order object to delete the surcharge line items from.
- * @param $skip_save
- *   Boolean indicating whether or not to skip saving the order in this function.
+ * Implements hook_commerce_price_component_type_info().
  */
-function commerce_order_surcharge_delete_surcharge_line_items($order, $skip_save = FALSE) {
-  $order_wrapper = entity_metadata_wrapper('commerce_order', $order);
+function commerce_order_surcharge_commerce_price_component_type_info() {
+  $components = array();
 
-  // When deleting more than one line item, metadata_wrapper will give problems
-  // if deleting while looping through the line items. So first remove from order
-  // and then delete the line items.
-  $line_item_ids = array();
-
-  foreach ($order_wrapper->commerce_line_items as $delta => $line_item_wrapper) {
-    // If this line item is a shipping line item...
-    if ($line_item_wrapper->type->value() == 'commerce_order_surcharge') {
-      // Store its ID for later deletion and remove the reference from the line
-      // item reference field.
-      $line_item_ids[] = $line_item_wrapper->line_item_id->value();
-      $order_wrapper->commerce_line_items->offsetUnset($delta);
-    }
-  }
-
-  commerce_order_calculate_total($order);
-  commerce_order_save($order);
-
-  // Then delete the line items.
-  commerce_line_item_delete_multiple($line_item_ids);
+  // Define a generic shipping price component type.
+  $components['commerce_order_surcharge'] = array(
+    'title' => variable_get('commerce_order_surcharge_display_title', t('Surcharge')),
+    'weight' => -10,
+  );
+  return $components;
 }
+

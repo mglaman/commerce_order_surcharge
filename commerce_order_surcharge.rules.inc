@@ -73,9 +73,7 @@ function commerce_order_surcharge_rules_action_info() {
 }
 
 function commerce_order_surcharge_apply($order) {
-  // Delete any existing shipping line items from the order.
-  commerce_order_surcharge_delete_surcharge_line_items($order, TRUE);
-
+  //@todo: Should check if order has line item already since rule can be modified.
   $line_item = commerce_order_surcharge_line_item_new($order->order_id);
 
   // Save and add the line item to the order.

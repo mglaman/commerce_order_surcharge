@@ -1,14 +1,13 @@
 <?php
 /**
  * @file commerce_order_surcharge.install
+ *  Handles installation for Commerce Order Surcharge module
  */
 
 /**
  * Implements hook_enable().
  *
- * Here we count on Commerce Line Items module to configure our type based on
- * the information we provide in
- * line_item_example_commerce_line_item_type_info().
+ * Register the Order Surcharge line item type.
  */
 function commerce_order_surcharge_enable() {
   // This function configures all existing line item types, including ours.

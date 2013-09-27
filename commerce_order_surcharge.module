@@ -146,8 +146,8 @@ function commerce_order_surcharge_line_item_new($order_id = 0) {
   // Reset the data array of the line item total field to only include a
   // base price component, set the currency code from the order.
   $base_price = array(
-    'amount' => $amount,
-    'currency_code' => $currency_code,
+    'amount' => 0,
+    'currency_code' => commerce_default_currency(),
     'data' => array(),
   );
   $surcharge_line_item_wrapper->commerce_unit_price->data = commerce_price_component_add($base_price, 'base_price', $base_price, TRUE);
